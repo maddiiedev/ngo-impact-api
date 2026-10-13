@@ -19,7 +19,7 @@ const ngoSchema = new mongoose.Schema(
     logoUrl: { type: String },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
     members: [memberSchema],
-    status: { type: String, enum: ["pending", "verified", "suspended"], default: "pending" },
+    status: { type: String, enum: ["verified", "suspended"], default: "verified", index: true },
   },
   { timestamps: true }
 );
