@@ -1,5 +1,8 @@
+// src/controllers/fundraiserController.js
 import mongoose from "mongoose";
 import Fundraiser from "../models/Fundraiser.js";
+import NGO from "../models/NGO.js";
+import Donation from "../models/Donation.js";
 import AppError from "../utils/AppError.js";
 import asyncHandler from "../utils/asyncHandler.js";
 
@@ -19,6 +22,8 @@ const EDITABLE_FIELDS = [
 ];
 
 const ALLOWED_STATUSES = ["draft", "active", "completed", "closed"];
+const CREATE_STATUSES = ["draft", "active"];
+const ALLOWED_CURRENCIES = ["NGN", "USD"];
 
 const parseDeadline = (value) => {
   if (value === null || value === "") return null;
@@ -29,19 +34,18 @@ const parseDeadline = (value) => {
     throw new AppError("deadline must be a valid date", 400);
   }
 
+  if (date <= new Date()) {
+    throw new AppError("deadline must be in the future", 400);
+  }
+
   return date;
 };
 
 const validateGoal = (value) => {
-  const amount = Number(value);
+  const amount =
+    typeof value === "string" && value.trim() !== "" ? Number(value) : value;
 
-  if (
-    value === "" ||
-    value === null ||
-    value === undefined ||
-    !Number.isFinite(amount) ||
-    amount < 1
-  ) {
+  if (typeof amount !== "number" || !Number.isFinite(amount) || amount < 1) {
     throw new AppError(
       "goalAmount must be a number greater than or equal to 1",
       400,
@@ -51,7 +55,47 @@ const validateGoal = (value) => {
   return amount;
 };
 
-const getFundraiserForOwner = async (id, userId) => {
+const parseCurrency = (value) => {
+  if (typeof value !== "string") {
+    throw new AppError("currency must be a string", 400);
+  }
+
+  const currency = value.trim().toUpperCase();
+
+  if (!ALLOWED_CURRENCIES.includes(currency)) {
+    throw new AppError(
+      `currency must be one of: ${ALLOWED_CURRENCIES.join(", ")}`,
+      400,
+    );
+  }
+
+  return currency;
+};
+
+const parseImageUrl = (value) => {
+  if (typeof value !== "string") {
+    throw new AppError("coverImageUrl must be a string", 400);
+  }
+
+  const url = value.trim();
+  if (url === "") return ""; // allows clearing the image
+
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new AppError("coverImageUrl must be a valid URL", 400);
+  }
+
+  if (parsed.protocol !== "https:") {
+    throw new AppError("coverImageUrl must start with https://", 400);
+  }
+
+  return url;
+};
+
+// Creator, or owner/admin of the fundraiser's NGO
+const getManageableFundraiser = async (id, userId) => {
   if (!mongoose.isValidObjectId(id)) {
     throw new AppError("Invalid fundraiser ID", 400);
   }
@@ -62,7 +106,19 @@ const getFundraiserForOwner = async (id, userId) => {
     throw new AppError("Fundraiser not found", 404);
   }
 
-  if (String(fundraiser.createdBy) !== String(userId)) {
+  let allowed = String(fundraiser.createdBy) === String(userId);
+
+  if (!allowed && fundraiser.ngo) {
+    allowed = !!(await NGO.exists({
+      _id: fundraiser.ngo,
+      status: { $ne: "suspended" },
+      members: {
+        $elemMatch: { user: userId, role: { $in: ["owner", "admin"] } },
+      },
+    }));
+  }
+
+  if (!allowed) {
     throw new AppError(
       "You do not have permission to manage this fundraiser",
       403,
@@ -87,14 +143,19 @@ export const createFundraiser = asyncHandler(async (req, res) => {
     createdBy: req.user._id,
   };
 
-  for (const field of ["category", "coverImageUrl", "currency"]) {
-    if (req.body[field] !== undefined) {
-      if (typeof req.body[field] !== "string") {
-        throw new AppError(`${field} must be a string`, 400);
-      }
-
-      data[field] = req.body[field].trim();
+  if (req.body.category !== undefined) {
+    if (typeof req.body.category !== "string") {
+      throw new AppError("category must be a string", 400);
     }
+    data.category = req.body.category.trim();
+  }
+
+  if (req.body.coverImageUrl !== undefined) {
+    data.coverImageUrl = parseImageUrl(req.body.coverImageUrl);
+  }
+
+  if (req.body.currency !== undefined) {
+    data.currency = parseCurrency(req.body.currency);
   }
 
   if (
@@ -106,7 +167,21 @@ export const createFundraiser = asyncHandler(async (req, res) => {
       throw new AppError("Invalid NGO ID", 400);
     }
 
-    data.ngo = req.body.ngo;
+    // The NGO must exist, not be suspended, and the user must belong to it
+    const ngo = await NGO.findOne({
+      _id: req.body.ngo,
+      status: { $ne: "suspended" },
+      "members.user": req.user._id,
+    });
+
+    if (!ngo) {
+      throw new AppError(
+        "You can only start a fundraiser for an NGO you belong to",
+        403,
+      );
+    }
+
+    data.ngo = ngo._id;
   }
 
   if (req.body.deadline !== undefined) {
@@ -114,10 +189,9 @@ export const createFundraiser = asyncHandler(async (req, res) => {
   }
 
   if (req.body.status !== undefined) {
-    if (!ALLOWED_STATUSES.includes(req.body.status)) {
-      throw new AppError("Invalid fundraiser status", 400);
+    if (!CREATE_STATUSES.includes(req.body.status)) {
+      throw new AppError("A new fundraiser must be 'draft' or 'active'", 400);
     }
-
     data.status = req.body.status;
   }
 
@@ -134,7 +208,6 @@ export const listFundraisers = asyncHandler(async (req, res) => {
   const { search, category, status, ngo } = req.query;
 
   const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
-
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 50);
 
   const filter = {};
@@ -148,13 +221,12 @@ export const listFundraisers = asyncHandler(async (req, res) => {
   }
 
   if (isText(status)) {
-    if (!ALLOWED_STATUSES.includes(status)) {
+    // Drafts are private. They are only available through GET /fundraisers/mine
+    if (!ALLOWED_STATUSES.includes(status) || status === "draft") {
       throw new AppError("Invalid fundraiser status", 400);
     }
-
     filter.status = status;
   } else {
-    // Hide draft fundraisers from the default public listing.
     filter.status = { $ne: "draft" };
   }
 
@@ -162,7 +234,6 @@ export const listFundraisers = asyncHandler(async (req, res) => {
     if (!mongoose.isValidObjectId(ngo)) {
       throw new AppError("Invalid NGO ID", 400);
     }
-
     filter.ngo = ngo;
   }
 
@@ -190,6 +261,19 @@ export const listFundraisers = asyncHandler(async (req, res) => {
   });
 });
 
+// GET /fundraisers/mine  (logged in, includes drafts)
+export const listMyFundraisers = asyncHandler(async (req, res) => {
+  const fundraisers = await Fundraiser.find({ createdBy: req.user._id })
+    .select("-__v")
+    .sort("-createdAt")
+    .lean();
+
+  res.json({
+    success: true,
+    data: { fundraisers },
+  });
+});
+
 // GET /fundraisers/:id
 export const getFundraiser = asyncHandler(async (req, res) => {
   if (!mongoose.isValidObjectId(req.params.id)) {
@@ -212,7 +296,7 @@ export const getFundraiser = asyncHandler(async (req, res) => {
 
 // PATCH /fundraisers/:id
 export const updateFundraiser = asyncHandler(async (req, res) => {
-  const fundraiser = await getFundraiserForOwner(req.params.id, req.user._id);
+  const fundraiser = await getManageableFundraiser(req.params.id, req.user._id);
 
   for (const field of EDITABLE_FIELDS) {
     if (req.body[field] === undefined) continue;
@@ -221,13 +305,21 @@ export const updateFundraiser = asyncHandler(async (req, res) => {
       if (!isText(req.body[field])) {
         throw new AppError(`${field} must be a non-empty string`, 400);
       }
-
       fundraiser[field] = req.body[field].trim();
       continue;
     }
 
     if (field === "goalAmount") {
-      fundraiser.goalAmount = validateGoal(req.body.goalAmount);
+      const amount = validateGoal(req.body.goalAmount);
+
+      if (amount < fundraiser.raisedAmount) {
+        throw new AppError(
+          "goalAmount cannot be lower than the amount already raised",
+          400,
+        );
+      }
+
+      fundraiser.goalAmount = amount;
       continue;
     }
 
@@ -240,19 +332,28 @@ export const updateFundraiser = asyncHandler(async (req, res) => {
       if (!ALLOWED_STATUSES.includes(req.body.status)) {
         throw new AppError("Invalid fundraiser status", 400);
       }
-
       fundraiser.status = req.body.status;
       continue;
     }
 
+    if (field === "currency") {
+      fundraiser.currency = parseCurrency(req.body.currency);
+      continue;
+    }
+
+    if (field === "coverImageUrl") {
+      fundraiser.coverImageUrl = parseImageUrl(req.body.coverImageUrl);
+      continue;
+    }
+
+    // category
     if (typeof req.body[field] !== "string") {
       throw new AppError(`${field} must be a string`, 400);
     }
-
     fundraiser[field] = req.body[field].trim();
   }
 
-  // Never allow clients to edit raisedAmount or createdBy.
+  // raisedAmount, createdBy and ngo are never editable here
   await fundraiser.save();
 
   res.json({
@@ -263,7 +364,17 @@ export const updateFundraiser = asyncHandler(async (req, res) => {
 
 // DELETE /fundraisers/:id
 export const deleteFundraiser = asyncHandler(async (req, res) => {
-  const fundraiser = await getFundraiserForOwner(req.params.id, req.user._id);
+  const fundraiser = await getManageableFundraiser(req.params.id, req.user._id);
+
+  // Donations keep a record of money given, so they must not be orphaned
+  const hasDonations = await Donation.exists({ fundraiser: fundraiser._id });
+
+  if (hasDonations) {
+    throw new AppError(
+      "This fundraiser has donations and can't be deleted. Close it instead.",
+      409,
+    );
+  }
 
   await fundraiser.deleteOne();
 
