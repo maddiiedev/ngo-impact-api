@@ -1,22 +1,27 @@
-// src/routes/index.js
+// src/routes/fundraiserRoutes.js
 import { Router } from "express";
-import authRoutes from "./authRoutes.js";
-import dashboardRoutes from "./dashboardRoutes.js";
-import { getMe } from "../controllers/authController.js";
 import { protect } from "../middleware/auth.js";
-import ngoRoutes from "./ngoRoutes.js";
-import fundraiserRoutes from "./fundraiserRoutes.js";
+import {
+  createFundraiser,
+  listFundraisers,
+  listMyFundraisers,
+  getFundraiser,
+  updateFundraiser,
+  deleteFundraiser,
+} from "../controllers/fundraiserController.js";
 
 const router = Router();
 
-router.get("/me", protect, getMe);
-router.use("/auth", authRoutes);
-router.use("/dashboard", dashboardRoutes);
-router.use("/ngos", ngoRoutes);
-router.use("/fundraisers", fundraiserRoutes);
+// "/mine" must come before "/:id", or "mine" is treated as an ID
+router.get("/mine", protect, listMyFundraisers);
 
-// Add these as you build them:
-// router.use('/campaigns', campaignRoutes);
-// router.use('/donations', donationRoutes);
+// Public read routes
+router.get("/", listFundraisers);
+router.get("/:id", getFundraiser);
+
+// Protected write routes
+router.post("/", protect, createFundraiser);
+router.patch("/:id", protect, updateFundraiser);
+router.delete("/:id", protect, deleteFundraiser);
 
 export default router;
