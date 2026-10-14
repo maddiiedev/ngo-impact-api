@@ -2,8 +2,17 @@ import mongoose from "mongoose";
 
 const campaignSchema = new mongoose.Schema(
   {
-    ngo: { type: mongoose.Schema.Types.ObjectId, ref: "NGO", required: true, index: true },
-    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+    ngo: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "NGO",
+      required: true,
+      index: true,
+    },
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
     title: { type: String, required: true, trim: true },
     description: { type: String, required: true },
     category: { type: String, trim: true },
@@ -13,9 +22,14 @@ const campaignSchema = new mongoose.Schema(
     currency: { type: String, default: "NGN" },
     startDate: { type: Date, default: Date.now },
     endDate: { type: Date },
-    status: { type: String, enum: ["draft", "active", "completed", "cancelled"], default: "draft" },
+    status: {
+      type: String,
+      enum: ["draft", "active", "completed", "cancelled"],
+      default: "draft",
+      index: true,
+    },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 campaignSchema.index({ title: "text", description: "text", category: "text" });
