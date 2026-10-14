@@ -1,27 +1,26 @@
-// src/routes/fundraiserRoutes.js
-import { Router } from "express";
-import { protect } from "../middleware/auth.js";
-import {
-  createFundraiser,
-  listFundraisers,
-  listMyFundraisers,
-  getFundraiser,
-  updateFundraiser,
-  deleteFundraiser,
-} from "../controllers/fundraiserController.js";
+import { Router } from 'express';
+
+import authRoutes from './authRoutes.js';
+import dashboardRoutes from './dashboardRoutes.js';
+import ngoRoutes from './ngoRoutes.js';
+import fundraiserRoutes from './fundraiserRoutes.js';
+import campaignRoutes from './campaignRoutes.js';
 
 const router = Router();
 
-// "/mine" must come before "/:id", or "mine" is treated as an ID
-router.get("/mine", protect, listMyFundraisers);
+// Authentication
+router.use('/auth', authRoutes);
 
-// Public read routes
-router.get("/", listFundraisers);
-router.get("/:id", getFundraiser);
+// Dashboard
+router.use('/dashboard', dashboardRoutes);
 
-// Protected write routes
-router.post("/", protect, createFundraiser);
-router.patch("/:id", protect, updateFundraiser);
-router.delete("/:id", protect, deleteFundraiser);
+// NGO management
+router.use('/ngos', ngoRoutes);
+
+// Fundraisers
+router.use('/fundraisers', fundraiserRoutes);
+
+// Campaigns
+router.use('/campaigns', campaignRoutes);
 
 export default router;
