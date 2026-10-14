@@ -1,22 +1,22 @@
-import express from 'express';
-
+import { Router } from "express";
+import { protect } from "../middleware/auth.js";
 import {
-  createCampaign,
-  getCampaigns,
-  getCampaignById,
+  listCampaigns,
+  getCampaign,
   updateCampaign,
+  updateCampaignStatus,
   deleteCampaign,
-} from '../controllers/campaignController.js';
+} from "../controllers/campaignController.js";
 
-const router = express.Router();
+const router = Router();
 
-router.route('/')
-  .post(createCampaign)
-  .get(getCampaigns);
+// Public read routes
+router.get("/", listCampaigns);
+router.get("/:id", getCampaign);
 
-router.route('/:id')
-  .get(getCampaignById)
-  .patch(updateCampaign)
-  .delete(deleteCampaign);
+// Protected write routes (ownership is checked inside the controller)
+router.patch("/:id", protect, updateCampaign);
+router.patch("/:id/status", protect, updateCampaignStatus);
+router.delete("/:id", protect, deleteCampaign);
 
 export default router;
