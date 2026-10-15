@@ -7,6 +7,9 @@ import {
   updateCampaignStatus,
   deleteCampaign,
 } from "../controllers/campaignController.js";
+import { uploadReceipt } from "../middleware/upload.js";
+import { createDonation, listPublicDonations } from "../controllers/donationController.js";
+import { donationUploadLimiter } from "../middleware/rateLimiters.js";
 
 const router = Router();
 
@@ -18,5 +21,9 @@ router.get("/:id", getCampaign);
 router.patch("/:id", protect, updateCampaign);
 router.patch("/:id/status", protect, updateCampaignStatus);
 router.delete("/:id", protect, deleteCampaign);
+
+router.get("/:id/donations", listPublicDonations("campaign"));
+router.post("/:id/donations", protect, uploadReceipt, createDonation("campaign"));
+router.post("/:id/donations", protect, donationUploadLimiter, uploadReceipt, createDonation("campaign"));
 
 export default router;

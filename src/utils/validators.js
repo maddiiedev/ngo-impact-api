@@ -1,4 +1,3 @@
-// src/utils/validators.js
 import AppError from "./AppError.js";
 
 export const ALLOWED_CURRENCIES = ["NGN", "USD"];

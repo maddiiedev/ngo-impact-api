@@ -9,9 +9,19 @@ const env = {
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '15m',
   jwtRefreshSecret: process.env.JWT_REFRESH_SECRET,
   jwtRefreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
+  cloudinaryCloudName: process.env.CLOUDINARY_CLOUD_NAME,
+  cloudinaryApiKey: process.env.CLOUDINARY_API_KEY,
+  cloudinaryApiSecret: process.env.CLOUDINARY_API_SECRET,
 };
 
-['MONGODB_URI', 'JWT_SECRET', 'JWT_REFRESH_SECRET'].forEach((key) => {
+[
+  'MONGODB_URI',
+  'JWT_SECRET',
+  'JWT_REFRESH_SECRET',
+  'CLOUDINARY_CLOUD_NAME',
+  'CLOUDINARY_API_KEY',
+  'CLOUDINARY_API_SECRET',
+].forEach((key) => {
   if (!process.env[key]) throw new Error(`Missing required env var: ${key}`);
 });
 

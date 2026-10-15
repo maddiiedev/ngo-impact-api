@@ -6,7 +6,7 @@ import AppError from '../utils/AppError.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import { signAccessToken, signRefreshToken, verifyRefreshToken, sha256 } from '../utils/tokens.js';
 
-const publicUser = (u) => ({
+export const publicUser = (u) => ({
   id: u._id,
   fullName: u.fullName,
   email: u.email,
@@ -15,7 +15,7 @@ const publicUser = (u) => ({
 });
 
 // Creates a new token pair and stores the refresh token's hash
-const issueTokens = async (user) => {
+export const issueTokens = async (user) => {
   const accessToken = signAccessToken(user._id);
   const refreshToken = signRefreshToken(user._id);
   user.refreshTokenHash = sha256(refreshToken);
@@ -91,43 +91,63 @@ export const getMe = asyncHandler(async (req, res) => {
 
 export const forgotPassword = asyncHandler(async (req, res) => {
   const { email } = req.body;
-  if (typeof email !== 'string') throw new AppError('Email is required', 400);
+  if (typeof email !== "string") throw new AppError("Email is required", 400);
 
   const user = await User.findOne({ email: email.toLowerCase().trim() });
   if (user && user.isActive) {
     const code = String(crypto.randomInt(100000, 1000000)); // 6 digits
     user.resetPasswordCodeHash = sha256(code);
     user.resetPasswordExpires = new Date(Date.now() + 15 * 60 * 1000);
+    user.resetPasswordAttempts = 0;
     await user.save();
 
     // TODO: send by email (e.g. nodemailer). For now, it prints in the terminal in dev only.
-    if (env.nodeEnv !== 'production') console.log(`Password reset code for ${user.email}: ${code}`);
+    if (env.nodeEnv !== "production") console.log(`Password reset code for ${user.email}: ${code}`);
   }
 
   // Same response whether or not the email exists, so nobody can probe for registered emails
-  res.json({ success: true, message: 'If that email is registered, a reset code has been sent' });
+  res.json({ success: true, message: "If that email is registered, a reset code has been sent" });
 });
+
+const MAX_RESET_ATTEMPTS = 5;
 
 export const resetPassword = asyncHandler(async (req, res) => {
   const { email, code, newPassword } = req.body;
-  if ([email, code, newPassword].some((v) => typeof v !== 'string')) {
-    throw new AppError('email, code and newPassword are required', 400);
+  if ([email, code, newPassword].some((v) => typeof v !== "string")) {
+    throw new AppError("email, code and newPassword are required", 400);
   }
-  if (newPassword.length < 8) throw new AppError('Password must be at least 8 characters', 400);
+  if (newPassword.length < 8) throw new AppError("Password must be at least 8 characters", 400);
+
+  const invalid = () => new AppError("Invalid or expired reset code", 400);
 
   const user = await User.findOne({
     email: email.toLowerCase().trim(),
     resetPasswordExpires: { $gt: new Date() },
   });
-  if (!user || user.resetPasswordCodeHash !== sha256(code)) {
-    throw new AppError('Invalid or expired reset code', 400);
+  if (!user || !user.resetPasswordCodeHash) throw invalid();
+
+  if (user.resetPasswordCodeHash !== sha256(code)) {
+    // Atomic increment, so parallel guesses can't dodge the count
+    const updated = await User.findByIdAndUpdate(
+      user._id,
+      { $inc: { resetPasswordAttempts: 1 } },
+      { new: true }
+    );
+    if (updated.resetPasswordAttempts >= MAX_RESET_ATTEMPTS) {
+      await User.updateOne(
+        { _id: user._id },
+        { resetPasswordCodeHash: null, resetPasswordExpires: null, resetPasswordAttempts: 0 }
+      );
+    }
+    throw invalid();
   }
 
   user.passwordHash = await bcrypt.hash(newPassword, 12);
   user.resetPasswordCodeHash = null;
   user.resetPasswordExpires = null;
-  user.refreshTokenHash = null;
+  user.resetPasswordAttempts = 0;
+  user.refreshTokenHash = null; // log out everywhere
   await user.save();
 
-  res.json({ success: true, message: 'Password reset successful. Please log in.' });
+  res.json({ success: true, message: "Password reset successful. Please log in." });
 });

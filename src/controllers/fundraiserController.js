@@ -1,4 +1,3 @@
-// src/controllers/fundraiserController.js
 import mongoose from "mongoose";
 import Fundraiser from "../models/Fundraiser.js";
 import NGO from "../models/NGO.js";

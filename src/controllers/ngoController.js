@@ -1,4 +1,5 @@
-import NGO from '../models/NGO.js';
+import mongoose from "mongoose";
+import NGO from '../models/NGO.js'; 
 import User from '../models/User.js';
 import AppError from '../utils/AppError.js';
 import asyncHandler from '../utils/asyncHandler.js';
@@ -135,4 +136,26 @@ export const removeMember = asyncHandler(async (req, res) => {
   req.ngo.members = req.ngo.members.filter((m) => String(m.user) !== userId);
   await req.ngo.save();
   res.json({ success: true, message: isSelf ? 'You have left the NGO' : 'Member removed' });
+});
+
+// POST /ngos/:id/transfer-ownership   { userId }   (owner only)
+export const transferOwnership = asyncHandler(async (req, res) => {
+  const { userId } = req.body;
+
+  if (typeof userId !== "string" || !mongoose.isValidObjectId(userId)) {
+    throw new AppError("A valid userId is required", 400);
+  }
+  if (userId === String(req.user._id)) throw new AppError("You are already the owner", 400);
+
+  const target = req.ngo.members.find((m) => String(m.user) === userId);
+  if (!target) throw new AppError("That user is not a member of this NGO", 404);
+
+  const newOwner = await User.findById(userId).select("isActive");
+  if (!newOwner?.isActive) throw new AppError("That account is not active", 400);
+
+  req.membership.role = "admin"; // the current owner steps down to admin
+  target.role = "owner";
+  await req.ngo.save();
+
+  res.json({ success: true, message: "Ownership transferred", data: { newOwnerId: userId } });
 });
