@@ -63,3 +63,7 @@ export const accountSecurityLimiter = make({
 export const donationUploadLimiter = make({
   windowMs: minutes(60), limit: 10, message: "You've submitted too many donations. Try again in an hour.", ...byUser,
 });
+
+export const applicationLimiter = make({
+  windowMs: minutes(60), limit: 30, message: "You've sent too many applications. Try again later.", ...byUser,
+});

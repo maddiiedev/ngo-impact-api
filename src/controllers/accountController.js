@@ -9,6 +9,10 @@ import AppError from "../utils/AppError.js";
 import asyncHandler from "../utils/asyncHandler.js";
 import { isText } from "../utils/validators.js";
 import { publicUser, issueTokens } from "./authController.js";
+import Opportunity from "../models/Opportunity.js";
+import Application from "../models/Application.js";
+import Shift from "../models/Shift.js";
+import { releaseAccepted } from "../utils/volunteerService.js";
 
 const PHONE_PATTERN = /^\+?[0-9\s-]{7,20}$/;
 
@@ -22,7 +26,10 @@ export const updateProfile = asyncHandler(async (req, res) => {
 
   if (fullName !== undefined) {
     if (!isText(fullName) || fullName.trim().length > 100) {
-      throw new AppError("fullName must be a non-empty string of up to 100 characters", 400);
+      throw new AppError(
+        "fullName must be a non-empty string of up to 100 characters",
+        400,
+      );
     }
     req.user.fullName = fullName.trim();
   }
@@ -47,15 +54,20 @@ export const changePassword = asyncHandler(async (req, res) => {
   if (typeof currentPassword !== "string" || typeof newPassword !== "string") {
     throw new AppError("currentPassword and newPassword are required", 400);
   }
-  if (newPassword.length < 8) throw new AppError("Password must be at least 8 characters", 400);
-  if (Buffer.byteLength(newPassword) > 72) throw new AppError("Password must be 72 bytes or fewer", 400);
+  if (newPassword.length < 8)
+    throw new AppError("Password must be at least 8 characters", 400);
+  if (Buffer.byteLength(newPassword) > 72)
+    throw new AppError("Password must be 72 bytes or fewer", 400);
 
   // 400, not 401, so a frontend doesn't treat a typo as an expired session
   if (!(await bcrypt.compare(currentPassword, req.user.passwordHash))) {
     throw new AppError("Current password is incorrect", 400);
   }
   if (await bcrypt.compare(newPassword, req.user.passwordHash)) {
-    throw new AppError("New password must be different from the current one", 400);
+    throw new AppError(
+      "New password must be different from the current one",
+      400,
+    );
   }
 
   req.user.passwordHash = await bcrypt.hash(newPassword, 12);
@@ -81,7 +93,9 @@ export const deactivateAccount = asyncHandler(async (req, res) => {
   }
 
   // NGOs the user owns: if others belong to them, ownership must be handed over first
-  const owned = await NGO.find({ members: { $elemMatch: { user: req.user._id, role: "owner" } } })
+  const owned = await NGO.find({
+    members: { $elemMatch: { user: req.user._id, role: "owner" } },
+  })
     .select("name members")
     .lean();
 
@@ -89,7 +103,7 @@ export const deactivateAccount = asyncHandler(async (req, res) => {
   if (shared.length) {
     throw new AppError(
       `Transfer ownership of ${shared.map((n) => n.name).join(", ")} before deactivating your account`,
-      409
+      409,
     );
   }
   const soloNgoIds = owned.map((n) => n._id); // owner is the only member: these get suspended
@@ -107,11 +121,21 @@ export const deactivateAccount = asyncHandler(async (req, res) => {
   // Donors may already have sent money, so nobody should be left waiting on this user
   const hasPending = await Donation.exists({
     status: "pending",
-    $or: [{ fundraiser: { $in: fundraiserIds } }, { campaign: { $in: campaignIds } }],
+    $or: [
+      { fundraiser: { $in: fundraiserIds } },
+      { campaign: { $in: campaignIds } },
+    ],
   });
   if (hasPending) {
-    throw new AppError("Review the pending donations on your fundraisers and NGOs before deactivating your account", 409);
+    throw new AppError(
+      "Review the pending donations on your fundraisers and NGOs before deactivating your account",
+      409,
+    );
   }
+
+  const soloOpportunityIds = await Opportunity.find({
+    ngo: { $in: soloNgoIds },
+  }).distinct("_id");
 
   const session = await mongoose.startSession();
   try {
@@ -119,18 +143,65 @@ export const deactivateAccount = asyncHandler(async (req, res) => {
       await Fundraiser.updateMany(
         { ...fundraiserFilter, status: { $in: ["draft", "active"] } },
         { status: "closed" },
-        { session }
+        { session },
       );
       await Campaign.updateMany(
         { ngo: { $in: soloNgoIds }, status: { $in: ["draft", "active"] } },
         { status: "cancelled" },
-        { session }
+        { session },
       );
-      await NGO.updateMany({ _id: { $in: soloNgoIds } }, { status: "suspended" }, { session });
+      // The user's own volunteering: withdraw applications, free spots, leave upcoming shifts
+      const applications = await Application.find({
+        volunteer: req.user._id,
+        status: { $in: ["pending", "accepted"] },
+      }).session(session);
+
+      for (const application of applications) {
+        if (application.status === "accepted") {
+          await releaseAccepted(application, { status: "withdrawn" }, session);
+        } else {
+          await Application.updateOne(
+            { _id: application._id },
+            { status: "withdrawn" },
+            { session },
+          );
+        }
+      }
+
+      // Opportunities of NGOs that get suspended: close them out
+      await Application.updateMany(
+        { opportunity: { $in: soloOpportunityIds }, status: "pending" },
+        {
+          status: "rejected",
+          rejectionReason: "This organization closed its account",
+        },
+        { session },
+      );
+      await Shift.updateMany(
+        { opportunity: { $in: soloOpportunityIds }, status: "scheduled" },
+        { status: "cancelled" },
+        { session },
+      );
+      await Opportunity.updateMany(
+        { _id: { $in: soloOpportunityIds }, status: { $ne: "cancelled" } },
+        { status: "cancelled" },
+        { session },
+      );
+
+      await NGO.updateMany(
+        { _id: { $in: soloNgoIds } },
+        { status: "suspended" },
+        { session },
+      );
       await User.updateOne(
         { _id: req.user._id },
-        { isActive: false, refreshTokenHash: null, resetPasswordCodeHash: null, resetPasswordExpires: null },
-        { session }
+        {
+          isActive: false,
+          refreshTokenHash: null,
+          resetPasswordCodeHash: null,
+          resetPasswordExpires: null,
+        },
+        { session },
       );
     });
   } finally {

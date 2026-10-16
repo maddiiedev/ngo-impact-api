@@ -52,3 +52,27 @@ export const parseDate = (value, label) => {
   if (Number.isNaN(date.getTime())) throw new AppError(`${label} must be a valid date`, 400);
   return date;
 };
+export const parsePositiveInt = (value, label, max = 100000) => {
+  const n = typeof value === "string" && value.trim() !== "" ? Number(value) : value;
+  if (typeof n !== "number" || !Number.isInteger(n) || n < 1 || n > max) {
+    throw new AppError(`${label} must be a whole number between 1 and ${max}`, 400);
+  }
+  return n;
+};
+
+export const parseStringList = (value, label, maxItems = 20) => {
+  if (
+    !Array.isArray(value) ||
+    value.length > maxItems ||
+    value.some((v) => typeof v !== "string" || !v.trim() || v.trim().length > 50)
+  ) {
+    throw new AppError(`${label} must be a list of up to ${maxItems} short strings`, 400);
+  }
+  return [...new Set(value.map((v) => v.trim().toLowerCase()))];
+};
+
+export const parseBoolean = (value, label) => {
+  if (value === true || value === "true") return true;
+  if (value === false || value === "false") return false;
+  throw new AppError(`${label} must be true or false`, 400);
+};

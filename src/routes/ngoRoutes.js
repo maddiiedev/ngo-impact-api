@@ -13,6 +13,7 @@ import {
   transferOwnership,
 } from "../controllers/ngoController.js";
 import { createCampaign, listNgoCampaigns } from "../controllers/campaignController.js";
+import { createOpportunity, listNgoOpportunities } from "../controllers/opportunityController.js";
 
 const router = Router();
 
@@ -30,5 +31,8 @@ router.post("/:id/transfer-ownership", ngoRole("owner"), transferOwnership);
 
 router.get("/:id/campaigns", listNgoCampaigns);
 router.post("/:ngoId/campaigns", ngoRole("owner", "admin"), createCampaign);
+
+router.get("/:id/opportunities", listNgoOpportunities);
+router.post("/:ngoId/opportunities", ngoRole("owner", "admin"), createOpportunity);
 
 export default router;
