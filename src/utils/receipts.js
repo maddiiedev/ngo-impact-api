@@ -1,4 +1,3 @@
-// src/utils/receipts.js
 import crypto from "node:crypto";
 import AppError from "./AppError.js";
 import cloudinary from "../config/cloudinary.js";

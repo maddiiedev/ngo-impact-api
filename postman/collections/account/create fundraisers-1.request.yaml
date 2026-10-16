@@ -1,0 +1,5 @@
+$kind: http-request
+name: create fundraisers
+url: ""
+method: GET
+order: 9000

@@ -1,4 +1,3 @@
-// src/routes/ngoRoutes.js
 import { Router } from "express";
 import { protect } from "../middleware/auth.js";
 import { ngoRole } from "../middleware/ngoRole.js";

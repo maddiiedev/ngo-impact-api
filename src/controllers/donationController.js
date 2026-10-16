@@ -1,4 +1,3 @@
-// src/controllers/donationController.js
 import mongoose from "mongoose";
 import Donation from "../models/Donation.js";
 import Campaign from "../models/Campaign.js";

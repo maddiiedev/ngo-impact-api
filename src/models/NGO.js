@@ -12,7 +12,7 @@ const ngoSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true, unique: true },
     description: { type: String, required: true, trim: true },
-    category: { type: String, trim: true }, // e.g. education, health, environment
+    category: { type: String, trim: true }, 
     email: { type: String, lowercase: true, trim: true },
     phoneNumber: { type: String, trim: true },
     address: { type: String, trim: true },

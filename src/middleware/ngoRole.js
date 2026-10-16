@@ -2,8 +2,7 @@ import NGO from '../models/NGO.js';
 import AppError from '../utils/AppError.js';
 import asyncHandler from '../utils/asyncHandler.js';
 
-// ngoRole('owner', 'admin') -> only those roles
-// ngoRole()                 -> any member of the NGO
+
 export const ngoRole = (...allowed) =>
   asyncHandler(async (req, res, next) => {
     const ngoId = req.params.ngoId || req.params.id;

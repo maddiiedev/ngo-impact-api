@@ -1,4 +1,3 @@
-// src/routes/index.js
 import { Router } from "express";
 import authRoutes from "./authRoutes.js";
 import dashboardRoutes from "./dashboardRoutes.js";

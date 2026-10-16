@@ -1,4 +1,3 @@
-// src/controllers/dashboardController.js
 import NGO from "../models/NGO.js";
 import Campaign from "../models/Campaign.js";
 import Fundraiser from "../models/Fundraiser.js";
